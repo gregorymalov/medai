@@ -1,0 +1,17 @@
+.vscode/
+.DS_Store
+
+__pycache__/
+*.py[cod]
+*$py.class
+
+.Python
+lib/
+
+.env
+.venv
+env/
+venv/
+app/data/audio/*.mp3
+app/data/transcription/*.txt
+app/data/transcription/*.json

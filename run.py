@@ -2,7 +2,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 import logging
 import os
-from app.routers import admin, amocrm, transcription, analysis, reports
+from app.routers import admin, amocrm, transcription, analysis, reports, call_records
 
 from app.settings.paths import print_paths
 # Выводим информацию о путях при запуске
@@ -53,6 +53,7 @@ app.include_router(amocrm.router)
 app.include_router(transcription.router)
 app.include_router(analysis.router)
 app.include_router(reports.router)
+app.include_router(call_records.router)
 
 # Эндпоинт для проверки статуса API
 @app.get("/api/status")

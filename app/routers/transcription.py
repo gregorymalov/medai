@@ -1,3 +1,4 @@
+from bson import ObjectId
 from fastapi import APIRouter, HTTPException, status, BackgroundTasks, Response
 from fastapi.responses import FileResponse
 from typing import Dict, Any, Optional, List
@@ -9,7 +10,7 @@ import fnmatch
 import aiofiles
 import aiohttp
 import traceback
-# from motor.motor_asyncio import AsyncIOMotorClient
+from motor.motor_asyncio import AsyncIOMotorClient
 from ..models.transcription import (
     TranscriptionRequest, 
     TranscriptionResponse, 
@@ -108,14 +109,15 @@ async def transcribe_audio(request: TranscriptionRequest, background_tasks: Back
         
         # Запускаем транскрибацию в фоновом режиме, чтобы не блокировать ответ API
         background_tasks.add_task(
-            transcribe_and_save,
-            audio_path=audio_path,
-            output_path=output_path,
-            num_speakers=request.num_speakers,
-            diarize=request.diarize,
-            phone=request.phone,
-            note_data={"note_id": request.note_id}
-        )
+        transcribe_and_save,
+        audio_path=audio_path,
+        output_path=output_path,
+        num_speakers=request.num_speakers,
+        diarize=request.diarize,
+        phone=request.phone,
+        note_data={"note_id": request.note_id},
+        administrator_id=request.administrator_id if hasattr(request, 'administrator_id') else None  # Добавляем administrator_id
+    )
         
         return TranscriptionResponse(
             success=True,
@@ -150,9 +152,28 @@ async def download_and_transcribe_call(
     Скачивает запись звонка и запускает её транскрибацию.
     Использует реальные имена менеджера и клиента в транскрипции, если они доступны.
     Сохраняет информацию о транскрипции в MongoDB.
+    Автоматически определяет администратора по ответственному в AmoCRM.
     """
     try:
         logger.info(f"Запрос на скачивание и транскрибацию звонка: client_id={client_id}, note_id={note_id}, contact_id={contact_id}, lead_id={lead_id}")
+        
+        # Находим клинику по client_id
+        from ..services.clinic_service import ClinicService
+        clinic_service = ClinicService()
+        
+        # Получаем клинику
+        clinic = await clinic_service.find_clinic_by_client_id(client_id)
+        if not clinic:
+            logger.warning(f"Клиника с client_id={client_id} не найдена")
+            if response:
+                response.status_code = status.HTTP_404_NOT_FOUND
+            return {
+                "success": False,
+                "message": f"Клиника с client_id={client_id} не найдена",
+                "data": None
+            }
+            
+        logger.info(f"Найдена клиника: {clinic['name']} (ID: {clinic['id']})")
         
         client = AsyncAmoCRMClient(
             client_id=client_id,
@@ -169,6 +190,7 @@ async def download_and_transcribe_call(
         client_name = None
         manager_name = None
         responsible_user_id = None
+        administrator_id = None  # ID администратора будем определять автоматически
         
         # Если указан ID контакта, ищем заметку у этого контакта
         if contact_id:
@@ -189,7 +211,7 @@ async def download_and_transcribe_call(
                     # Получаем ID ответственного
                     responsible_user_id = n.get("responsible_user_id")
                     if responsible_user_id:
-                        logger.info(f"ID ответственного: {responsible_user_id}")
+                        logger.info(f"ID ответственного в AmoCRM: {responsible_user_id}")
                         
                     break
             
@@ -296,7 +318,7 @@ async def download_and_transcribe_call(
                 "data": None
             }
         
-        # Если есть ID ответственного, пытаемся получить его имя
+        # Если есть ID ответственного, пытаемся получить его имя и найти связанного администратора
         if responsible_user_id:
             try:
                 # Запрос к API AmoCRM для получения данных о пользователе
@@ -309,6 +331,30 @@ async def download_and_transcribe_call(
                     # Получаем имя ответственного
                     manager_name = user_response.get("name")
                     logger.info(f"Имя ответственного: {manager_name}")
+                    
+                    # Ищем администратора по amocrm_user_id и клинике
+                    mongo_client = AsyncIOMotorClient(MONGO_URI)
+                    db = mongo_client[DB_NAME]
+                    
+                    admin = await db.administrators.find_one({
+                        "amocrm_user_id": str(responsible_user_id),
+                        "clinic_id": ObjectId(clinic["id"])
+                    })
+                    
+                    if admin:
+                        administrator_id = str(admin["_id"])
+                        logger.info(f"Найден администратор в системе: {administrator_id} ({admin.get('name', 'Без имени')})")
+                    else:
+                        logger.warning(f"Администратор для ответственного {responsible_user_id} не найден в системе")
+                        
+                        # Попробуем найти любого администратора для этой клиники
+                        admin = await db.administrators.find_one({
+                            "clinic_id": ObjectId(clinic["id"])
+                        })
+                        
+                        if admin:
+                            administrator_id = str(admin["_id"])
+                            logger.info(f"Найден администратор по умолчанию: {administrator_id} ({admin.get('name', 'Без имени')})")
             except Exception as e:
                 logger.warning(f"Не удалось получить данные ответственного: {e}")
         
@@ -401,6 +447,12 @@ async def download_and_transcribe_call(
             
         output_path = os.path.join(TRANSCRIPTION_DIR, output_filename)
         
+        # Логируем информацию об администраторе
+        if administrator_id:
+            logger.info(f"Запуск транскрибации с привязкой к администратору ID: {administrator_id}")
+        else:
+            logger.warning("Администратор не определен, лимиты не будут обновлены")
+        
         # Запускаем транскрибацию в фоновом режиме с использованием имен менеджера и клиента
         background_tasks.add_task(
             transcribe_and_save,
@@ -417,19 +469,8 @@ async def download_and_transcribe_call(
                 "lead_id": lead_id,
                 "contact_id": contact_id,
                 "client_id": client_id
-            }
-        )
-        
-        # Сохраняем информацию о транскрипции в базу данных
-        background_tasks.add_task(
-            save_transcription_info,
-            filename=output_filename,
-            note_id=note_id,
-            lead_id=lead_id,
-            contact_id=contact_id,
-            client_id=client_id,
-            manager=manager_name,
-            phone=phone_str if phone_str else phone
+            },
+            administrator_id=administrator_id  # Используем определенный ID администратора
         )
         
         return {
@@ -444,6 +485,7 @@ async def download_and_transcribe_call(
                 "manager_name": manager_name,
                 "is_first_contact": is_first_contact,
                 "status": "processing",
+                "found_administrator_id": administrator_id,  # Добавляем для отладки
                 "download_url": f"/api/amocrm/contact/call/{note_id}/download?client_id={client_id}" + (f"&contact_id={contact_id}" if contact_id else ""),
                 "transcription_url": f"/api/transcriptions/{output_filename}/download"
             }

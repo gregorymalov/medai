@@ -25,6 +25,7 @@ from ..models.amocrm import (
 from mlab_amo_async.amocrm_client import AsyncAmoCRMClient
 from ..utils.helpers import convert_date_to_timestamps, cleanup_temp_file
 from ..settings.paths import AUDIO_DIR
+from ..services.clinic_service import ClinicService
 
 
 logger = logging.getLogger(__name__)
@@ -38,13 +39,221 @@ DB_NAME = "medai"
 # Создаем директорию для аудио, если она не существует
 # os.makedirs(AUDIO_DIR, exist_ok=True)
 
-@router.post("/leads/by-date", response_model=APIResponse)
+
+
+
+
+# @router.post("/leads/by-date", response_model=APIResponse)
+# async def get_leads_by_date(request: LeadsByDateRequest):
+#     """
+#     Получение списка сделок по дате создания.
+#     """
+#     try:
+#         logger.info(f"Запрос сделок по дате: client_id={request.client_id}, date={request.date}")
+        
+#         # Находим клинику по client_id
+#         clinic_service = ClinicService()
+#         clinic = await clinic_service.find_clinic_by_client_id(request.client_id)
+        
+#         if not clinic:
+#             return APIResponse(
+#                 success=False,
+#                 message=f"Клиника с client_id={request.client_id} не найдена",
+#                 data=None
+#             )
+        
+#         # Преобразуем дату в timestamp начала и конца дня
+#         try:
+#             start_timestamp, end_timestamp = convert_date_to_timestamps(request.date)
+#             logger.info(f"Диапазон поиска: с {start_timestamp} по {end_timestamp}")
+#         except ValueError as e:
+#             return APIResponse(
+#                 success=False,
+#                 message=str(e),
+#                 data=None
+#             )
+        
+#         # Создаем экземпляр клиента с данными из клиники
+#         client = AsyncAmoCRMClient(
+#             client_id=clinic["client_id"],
+#             client_secret=clinic["client_secret"],  
+#             subdomain=clinic["amocrm_subdomain"],      
+#             redirect_url=clinic["redirect_url"],   
+#             mongo_uri=MONGO_URI,
+#             db_name=DB_NAME
+#         )
+#     # try:
+#     #     logger.info(f"Запрос сделок по дате: client_id={request.client_id}, date={request.date}")
+        
+#     #     # Преобразуем дату в timestamp начала и конца дня
+#     #     try:
+#     #         start_timestamp, end_timestamp = convert_date_to_timestamps(request.date)
+#     #         logger.info(f"Диапазон поиска: с {start_timestamp} по {end_timestamp}")
+#     #     except ValueError as e:
+#     #         return APIResponse(
+#     #             success=False,
+#     #             message=str(e),
+#     #             data=None
+#     #         )
+        
+#     #     # Создаем экземпляр клиента
+#     #     client = AsyncAmoCRMClient(
+#     #         client_id=request.client_id,
+#     #         client_secret="",  
+#     #         subdomain="",      
+#     #         redirect_url="",   
+#     #         mongo_uri=MONGO_URI,
+#     #         db_name=DB_NAME
+#     #     )
+        
+#         # Получаем все сделки с пагинацией
+#         all_leads = []
+#         page = 1
+        
+#         while True:
+#             # Параметры фильтрации для AmoCRM
+#             filter_params = {
+#                 "filter[created_at][from]": start_timestamp,
+#                 "filter[created_at][to]": end_timestamp,
+#                 "page": page,
+#                 "limit": 250  # Максимальное количество результатов на страницу
+#             }
+            
+#             # Получаем сделки с фильтрацией по дате
+#             leads_response, status_code = await client.leads.request(
+#                 "get",
+#                 "leads",
+#                 params=filter_params
+#             )
+            
+#             # Проверяем успешность запроса
+#             if status_code != 200:
+#                 logger.error(f"Ошибка при запросе сделок (страница {page}): HTTP {status_code}")
+#                 break
+            
+#             # Извлекаем сделки из ответа
+#             if "_embedded" in leads_response and "leads" in leads_response["_embedded"]:
+#                 leads = leads_response["_embedded"]["leads"]
+#                 all_leads.extend(leads)
+#                 logger.info(f"Получено {len(leads)} сделок на странице {page}")
+                
+#                 # Проверяем, есть ли следующая страница
+#                 if "_links" in leads_response and "next" in leads_response["_links"]:
+#                     page += 1
+#                 else:
+#                     break
+#             else:
+#                 break
+        
+#         logger.info(f"Всего найдено {len(all_leads)} сделок за {request.date}")
+        
+#         # Форматируем данные для ответа
+#         formatted_leads = []
+#         for lead in all_leads:
+#             # Форматируем данные о сделке для более читаемого вида
+#             created_at = lead.get("created_at")
+#             created_date = datetime.fromtimestamp(created_at).strftime("%d.%m.%Y %H:%M:%S") if created_at else "Неизвестно"
+            
+#             # Базовая информация о сделке
+#             formatted_lead = {
+#                 "id": lead.get("id"),
+#                 "name": lead.get("name", "Без названия"),
+#                 "created_at": created_at,
+#                 "created_date": created_date,
+#                 "pipeline_id": lead.get("pipeline_id"),
+#                 "status_id": lead.get("status_id"),
+#                 "responsible_user_id": lead.get("responsible_user_id"),
+#                 "price": lead.get("price", 0)
+#             }
+            
+#             formatted_leads.append(formatted_lead)
+        
+#         return APIResponse(
+#             success=True,
+#             message=f"Найдено {len(all_leads)} сделок за {request.date}",
+#             data={
+#                 "date": request.date,
+#                 "total_leads": len(all_leads),
+#                 "leads": formatted_leads
+#             }
+#         )
+#     except Exception as e:
+#         error_msg = f"Ошибка при получении сделок по дате: {str(e)}"
+#         logger.error(error_msg, exc_info=True)
+#         return APIResponse(
+#             success=False,
+#             message=error_msg,
+#             data=None
+#         )
+#     finally:
+#         if 'client' in locals():
+#             await client.close()
+
+
+
+
+
+# @router.post("/api/amocrm/leads/by-date", response_model=APIResponse)
+# async def get_leads_by_date(request: LeadsByDateRequest):
+#     """
+#     Получение списка сделок по дате создания.
+#     """
+#     try:
+#         logger.info(f"Запрос сделок по дате: client_id={request.client_id}, date={request.date}")
+        
+#         # Находим клинику по client_id
+#         clinic_service = ClinicService()
+#         clinic = await clinic_service.find_clinic_by_client_id(request.client_id)
+        
+#         if not clinic:
+#             return APIResponse(
+#                 success=False,
+#                 message=f"Клиника с client_id={request.client_id} не найдена",
+#                 data=None
+#             )
+        
+#         # Преобразуем дату в timestamp начала и конца дня
+#         try:
+#             start_timestamp, end_timestamp = convert_date_to_timestamps(request.date)
+#             logger.info(f"Диапазон поиска: с {start_timestamp} по {end_timestamp}")
+#         except ValueError as e:
+#             return APIResponse(
+#                 success=False,
+#                 message=str(e),
+#                 data=None
+#             )
+        
+#         # Создаем экземпляр клиента с данными из клиники
+#         client = AsyncAmoCRMClient(
+#             client_id=clinic["client_id"],
+#             client_secret=clinic["client_secret"],  
+#             subdomain=clinic["amocrm_subdomain"],      
+#             redirect_url=clinic["redirect_url"],   
+#             mongo_uri=MONGO_URI,
+#             db_name=DB_NAME
+#         )
+        
+#         # Далее идет оригинальный код...
+
+
+@router.post("/api/amocrm/leads/by-date", response_model=APIResponse)
 async def get_leads_by_date(request: LeadsByDateRequest):
     """
     Получение списка сделок по дате создания.
     """
     try:
         logger.info(f"Запрос сделок по дате: client_id={request.client_id}, date={request.date}")
+        
+        # Находим клинику по client_id
+        clinic_service = ClinicService()
+        clinic = await clinic_service.find_clinic_by_client_id(request.client_id)
+        
+        if not clinic:
+            return APIResponse(
+                success=False,
+                message=f"Клиника с client_id={request.client_id} не найдена",
+                data=None
+            )
         
         # Преобразуем дату в timestamp начала и конца дня
         try:
@@ -57,12 +266,12 @@ async def get_leads_by_date(request: LeadsByDateRequest):
                 data=None
             )
         
-        # Создаем экземпляр клиента
+        # Создаем экземпляр клиента с данными из клиники
         client = AsyncAmoCRMClient(
-            client_id=request.client_id,
-            client_secret="",  
-            subdomain="",      
-            redirect_url="",   
+            client_id=clinic["client_id"],
+            client_secret=clinic["client_secret"],  
+            subdomain=clinic["amocrm_subdomain"],      
+            redirect_url=clinic["redirect_url"],   
             mongo_uri=MONGO_URI,
             db_name=DB_NAME
         )

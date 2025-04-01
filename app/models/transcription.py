@@ -8,6 +8,7 @@ class TranscriptionRequest(BaseModel):
     note_id: Optional[int] = Field(None, description="ID заметки для связи с записью звонка")
     num_speakers: int = Field(2, description="Количество говорящих для распознавания")
     diarize: bool = Field(True, description="Включить диаризацию (разделение по говорящим)")
+    administrator_id: Optional[str] = Field(None, description="ID администратора для обновления лимитов")
     
 class TranscriptionResponse(BaseModel):
     success: bool

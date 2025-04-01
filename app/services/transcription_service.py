@@ -10,6 +10,8 @@ import logging
 from motor.motor_asyncio import AsyncIOMotorClient
 from ..settings.paths import AUDIO_DIR, TRANSCRIPTION_DIR
 from ..settings.auth import evenlabs
+from ..services.limits_service import LimitsService
+
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +28,8 @@ async def transcribe_and_save(
     manager_name: Optional[str] = None,
     client_name: Optional[str] = None,
     is_first_contact: bool = False,
-    note_data: Optional[Dict[str, Any]] = None
+    note_data: Optional[Dict[str, Any]] = None,
+    administrator_id: Optional[str] = None  # Добавляем параметр ID администратора
 ):
     """
     Выполняет транскрибацию аудиофайла и сохраняет результат в текстовый файл.
@@ -40,6 +43,7 @@ async def transcribe_and_save(
     :param client_name: Имя клиента
     :param is_first_contact: Флаг первичного обращения
     :param note_data: Дополнительные данные о заметке
+    :param administrator_id: ID администратора для обновления лимитов
     """
     try:
         logger.info(f"Начало фоновой транскрибации файла: {audio_path}")
@@ -332,6 +336,8 @@ async def transcribe_and_save(
         if note_data:
             try:
                 output_filename = os.path.basename(output_path)
+                audio_filename = os.path.basename(audio_path)  # Получаем имя аудиофайла
+                
                 await save_transcription_info(
                     filename=output_filename,
                     note_id=note_data.get("note_id"),
@@ -339,7 +345,9 @@ async def transcribe_and_save(
                     contact_id=note_data.get("contact_id"),
                     client_id=note_data.get("client_id"),
                     manager=manager_name,
-                    phone=phone
+                    phone=phone,
+                    filename_audio=audio_filename,  # Передаем имя аудиофайла
+                    administrator_id=administrator_id  # Передаем ID администратора
                 )
             except Exception as db_error:
                 logger.error(f"Ошибка при сохранении информации о транскрипции в базу данных: {db_error}")
@@ -355,7 +363,7 @@ async def transcribe_and_save(
                 file.write(f"Ошибка при транскрибации файла {audio_path}:\n\n{str(e)}")
         except:
             logger.error(f"Не удалось записать информацию об ошибке в файл {output_path}")
-
+            
 async def save_transcription_info(
     filename: str,
     note_id: Optional[int] = None,
@@ -363,37 +371,75 @@ async def save_transcription_info(
     contact_id: Optional[int] = None,
     client_id: Optional[str] = None,
     manager: Optional[str] = None,
-    phone: Optional[str] = None
+    phone: Optional[str] = None,
+    filename_audio: Optional[str] = None,
+    administrator_id: Optional[str] = None
 ):
     """
     Сохраняет информацию о транскрипции в MongoDB для последующего поиска.
+    Предотвращает создание дубликатов.
     """
     try:
         mongo_client = AsyncIOMotorClient(MONGO_URI)
         db = mongo_client[DB_NAME]
         collection = db["transcriptions"]
         
-        # Создаем запись
-        record = {
-            "lead_id": lead_id,
-            "contact_id": contact_id,
-            "note_id": note_id,
-            "client_id": client_id,
-            "manager": manager,
-            "phone": phone,
-            "filename": filename,
-            "created_at": datetime.now().isoformat()
-        }
+        # Проверяем, существует ли уже запись для этого файла
+        existing_record = await collection.find_one({
+            "filename": filename
+        })
         
-        # Сохраняем в базу
-        await collection.insert_one(record)
-        logger.info(f"Сохранена информация о транскрипции в базу данных: {filename}")
+        if existing_record:
+            # Обновляем существующую запись
+            await collection.update_one(
+                {"_id": existing_record["_id"]},
+                {"$set": {
+                    "lead_id": lead_id,
+                    "contact_id": contact_id,
+                    "note_id": note_id,
+                    "client_id": client_id,
+                    "manager": manager,
+                    "phone": phone,
+                    "filename_audio": filename_audio,
+                    "updated_at": datetime.now().isoformat()
+                }}
+            )
+            logger.info(f"Обновлена информация о транскрипции: {filename}")
+        else:
+            # Создаем новую запись
+            record = {
+                "lead_id": lead_id,
+                "contact_id": contact_id,
+                "note_id": note_id,
+                "client_id": client_id,
+                "manager": manager,
+                "phone": phone,
+                "filename": filename,
+                "filename_audio": filename_audio,
+                "created_at": datetime.now().isoformat(),
+                "updated_at": datetime.now().isoformat()
+            }
+            
+            # Сохраняем в базу
+            await collection.insert_one(record)
+            logger.info(f"Сохранена информация о транскрипции в базу данных: {filename}")
+        
+        # Обновляем лимиты, если указан ID администратора
+        if administrator_id and client_id:
+            # Обновляем счетчики использования
+            limits_service = LimitsService()
+            increment_result = await limits_service.increment_usage(administrator_id)
+            
+            if increment_result:
+                logger.info(f"Обновлены лимиты использования для администратора {administrator_id}")
+            else:
+                logger.warning(f"Не удалось обновить лимиты для администратора {administrator_id}")
         
         return True
     except Exception as e:
         logger.error(f"Ошибка при сохранении информации о транскрипции в базу данных: {e}")
         return False
-
+    
 async def find_transcription_file(
     note_id: Optional[int] = None,
     lead_id: Optional[int] = None,

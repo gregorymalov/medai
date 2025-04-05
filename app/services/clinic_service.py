@@ -17,6 +17,132 @@ class ClinicService:
         self.client = AsyncIOMotorClient(MONGO_URI)
         self.db = self.client[DB_NAME]
         
+    # async def register_clinic(self, clinic_data):
+    #     """
+    #     Регистрирует новую клинику и создает администраторов из AmoCRM.
+    #     Предотвращает создание дубликатов по client_id.
+    #     """
+    #     try:
+    #         # Логируем входные данные
+    #         logger.info(f"Начинаем регистрацию клиники: {clinic_data.get('name', 'Unknown')}")
+            
+    #         # Проверяем, существует ли уже клиника с таким client_id
+    #         existing_clinic = await self.db.clinics.find_one({"client_id": clinic_data["client_id"]})
+            
+    #         now = datetime.now().isoformat()
+            
+    #         if existing_clinic:
+    #             # Клиника уже существует - обновляем её данные
+    #             clinic_id = str(existing_clinic["_id"])
+    #             logger.info(f"Клиника с client_id {clinic_data['client_id']} уже существует (ID: {clinic_id})")
+                
+    #             # Обновляем данные клиники
+    #             await self.db.clinics.update_one(
+    #                 {"_id": ObjectId(clinic_id)},
+    #                 {"$set": {
+    #                     "name": clinic_data["name"],
+    #                     "amocrm_subdomain": clinic_data["amocrm_subdomain"],
+    #                     "client_secret": clinic_data["client_secret"],
+    #                     "redirect_url": clinic_data["redirect_url"],
+    #                     "amocrm_pipeline_id": clinic_data.get("amocrm_pipeline_id"),
+    #                     "monthly_limit": clinic_data.get("monthly_limit", 100),
+    #                     "updated_at": now
+    #                 }}
+    #             )
+    #             logger.info(f"Данные клиники {clinic_id} обновлены")
+    #         else:
+    #             # Новая клиника - создаем
+    #             clinic_doc = {
+    #                 "name": clinic_data["name"],
+    #                 "amocrm_subdomain": clinic_data["amocrm_subdomain"],
+    #                 "client_id": clinic_data["client_id"],
+    #                 "client_secret": clinic_data["client_secret"],
+    #                 "redirect_url": clinic_data["redirect_url"],
+    #                 "amocrm_pipeline_id": clinic_data.get("amocrm_pipeline_id"),
+    #                 "monthly_limit": clinic_data.get("monthly_limit", 100),
+    #                 "current_month_usage": 0,
+    #                 "last_reset_date": now,
+    #                 "created_at": now,
+    #                 "updated_at": now
+    #             }
+                
+    #             # Вставляем клинику в базу данных
+    #             result = await self.db.clinics.insert_one(clinic_doc)
+    #             clinic_id = str(result.inserted_id)
+    #             logger.info(f"Новая клиника создана с ID: {clinic_id}")
+            
+    #         # Создаем клиент AmoCRM для получения пользователей
+    #         amocrm_client = AsyncAmoCRMClient(
+    #             client_id=clinic_data["client_id"],
+    #             client_secret=clinic_data["client_secret"],
+    #             subdomain=clinic_data["amocrm_subdomain"],
+    #             redirect_url=clinic_data["redirect_url"],
+    #             mongo_uri=MONGO_URI,
+    #             db_name=DB_NAME
+    #         )
+            
+    #         # Инициализируем токен с кодом авторизации
+    #         await amocrm_client.init_token(clinic_data["auth_code"])
+    #         logger.info("Токен AmoCRM инициализирован успешно")
+            
+    #         # Получаем пользователей из AmoCRM
+    #         users = await self.get_amocrm_users(amocrm_client)
+    #         logger.info(f"Получено {len(users) if users else 0} пользователей из AmoCRM")
+            
+    #         if not users:
+    #             # Если не удалось получить пользователей, создадим хотя бы одного админа вручную
+    #             logger.warning("Не удалось получить пользователей из AmoCRM, создаем базового админа")
+                
+    #             # Проверяем, существует ли уже базовый администратор
+    #             existing_admin = await self.db.administrators.find_one({
+    #                 "clinic_id": ObjectId(clinic_id),
+    #                 "amocrm_user_id": "default_admin"
+    #             })
+                
+    #             if existing_admin:
+    #                 admin_ids = [str(existing_admin["_id"])]
+    #                 logger.info("Базовый администратор уже существует")
+    #             else:
+    #                 admin_doc = {
+    #                     "clinic_id": ObjectId(clinic_id),
+    #                     "name": "Администратор по умолчанию",
+    #                     "amocrm_user_id": "default_admin",
+    #                     "email": None,
+    #                     "monthly_limit": None,
+    #                     "current_month_usage": 0,
+    #                     "created_at": now,
+    #                     "updated_at": now
+    #                 }
+    #                 admin_result = await self.db.administrators.insert_one(admin_doc)
+    #                 admin_ids = [str(admin_result.inserted_id)]
+    #                 logger.info("Создан базовый администратор")
+    #         else:
+    #             # Создаем администраторов в базе данных
+    #             admin_ids = await self.create_administrators(users, clinic_id)
+                
+    #         logger.info(f"Всего администраторов: {len(admin_ids)}")
+            
+    #         # Обновляем клинику с добавлением ID администраторов
+    #         await self.db.clinics.update_one(
+    #             {"_id": ObjectId(clinic_id)},
+    #             {"$set": {"administrator_ids": admin_ids}}
+    #         )
+    #         logger.info("Клиника обновлена с ID администраторов")
+            
+    #         # Возвращаем информацию о созданной/обновленной клинике
+    #         return {
+    #             "clinic_id": clinic_id,
+    #             "name": clinic_data["name"],
+    #             "administrator_count": len(admin_ids),
+    #             "is_new": not existing_clinic
+    #         }
+            
+    #     except Exception as e:
+    #         logger.error(f"Ошибка при регистрации клиники: {e}")
+    #         import traceback
+    #         logger.error(f"Трассировка: {traceback.format_exc()}")
+    #         raise
+
     async def register_clinic(self, clinic_data):
         """
         Регистрирует новую клинику и создает администраторов из AmoCRM.
@@ -33,12 +159,12 @@ class ClinicService:
             
             if existing_clinic:
                 # Клиника уже существует - обновляем её данные
-                clinic_id = str(existing_clinic["_id"])
+                clinic_id = str(existing_clinic["_id"]) if not isinstance(existing_clinic["_id"], str) else existing_clinic["_id"]
                 logger.info(f"Клиника с client_id {clinic_data['client_id']} уже существует (ID: {clinic_id})")
                 
                 # Обновляем данные клиники
                 await self.db.clinics.update_one(
-                    {"_id": ObjectId(clinic_id)},
+                    {"client_id": clinic_data["client_id"]},
                     {"$set": {
                         "name": clinic_data["name"],
                         "amocrm_subdomain": clinic_data["amocrm_subdomain"],
@@ -52,7 +178,11 @@ class ClinicService:
                 logger.info(f"Данные клиники {clinic_id} обновлены")
             else:
                 # Новая клиника - создаем
+                # Генерируем UUID для id
+                import uuid
+                
                 clinic_doc = {
+                    "_id": str(uuid.uuid4()),  # Используем UUID как строковый _id
                     "name": clinic_data["name"],
                     "amocrm_subdomain": clinic_data["amocrm_subdomain"],
                     "client_id": clinic_data["client_id"],
@@ -67,8 +197,8 @@ class ClinicService:
                 }
                 
                 # Вставляем клинику в базу данных
-                result = await self.db.clinics.insert_one(clinic_doc)
-                clinic_id = str(result.inserted_id)
+                await self.db.clinics.insert_one(clinic_doc)
+                clinic_id = clinic_doc["_id"]
                 logger.info(f"Новая клиника создана с ID: {clinic_id}")
             
             # Создаем клиент AmoCRM для получения пользователей
@@ -95,16 +225,19 @@ class ClinicService:
                 
                 # Проверяем, существует ли уже базовый администратор
                 existing_admin = await self.db.administrators.find_one({
-                    "clinic_id": ObjectId(clinic_id),
+                    "clinic_id": clinic_id,
                     "amocrm_user_id": "default_admin"
                 })
                 
                 if existing_admin:
-                    admin_ids = [str(existing_admin["_id"])]
+                    admin_ids = [str(existing_admin["_id"]) if not isinstance(existing_admin["_id"], str) else existing_admin["_id"]]
                     logger.info("Базовый администратор уже существует")
                 else:
+                    import uuid
+                    
                     admin_doc = {
-                        "clinic_id": ObjectId(clinic_id),
+                        "_id": str(uuid.uuid4()),  # Используем UUID как строковый _id
+                        "clinic_id": clinic_id,
                         "name": "Администратор по умолчанию",
                         "amocrm_user_id": "default_admin",
                         "email": None,
@@ -113,8 +246,8 @@ class ClinicService:
                         "created_at": now,
                         "updated_at": now
                     }
-                    admin_result = await self.db.administrators.insert_one(admin_doc)
-                    admin_ids = [str(admin_result.inserted_id)]
+                    await self.db.administrators.insert_one(admin_doc)
+                    admin_ids = [admin_doc["_id"]]
                     logger.info("Создан базовый администратор")
             else:
                 # Создаем администраторов в базе данных
@@ -124,7 +257,7 @@ class ClinicService:
             
             # Обновляем клинику с добавлением ID администраторов
             await self.db.clinics.update_one(
-                {"_id": ObjectId(clinic_id)},
+                {"_id": clinic_id},
                 {"$set": {"administrator_ids": admin_ids}}
             )
             logger.info("Клиника обновлена с ID администраторов")
@@ -178,6 +311,58 @@ class ClinicService:
             logger.error(f"Трассировка: {traceback.format_exc()}")
             return []
             
+    # async def create_administrators(self, amocrm_users, clinic_id):
+    #     """
+    #     Создает администраторов на основе пользователей AmoCRM.
+    #     Предотвращает создание дубликатов.
+    #     """
+    #     admin_ids = []
+        
+    #     for user in amocrm_users:
+    #         try:
+    #             user_id = str(user["id"])
+    #             # Проверяем, существует ли уже такой администратор
+    #             existing_admin = await self.db.administrators.find_one({
+    #                 "amocrm_user_id": user_id,
+    #                 "clinic_id": ObjectId(clinic_id)
+    #             })
+                
+    #             now = datetime.now().isoformat()
+                
+    #             if existing_admin:
+    #                 # Обновляем существующего администратора
+    #                 await self.db.administrators.update_one(
+    #                     {"_id": existing_admin["_id"]},
+    #                     {"$set": {
+    #                         "name": user.get("name", "Неизвестный администратор"),
+    #                         "email": user.get("email"),
+    #                         "updated_at": now
+    #                     }}
+    #                 )
+    #                 admin_ids.append(str(existing_admin["_id"]))
+    #                 logger.info(f"Обновлен администратор: {user.get('name')} (ID: {str(existing_admin['_id'])})")
+    #             else:
+    #                 # Создаем нового администратора
+    #                 admin_doc = {
+    #                     "clinic_id": ObjectId(clinic_id),
+    #                     "name": user.get("name", "Неизвестный администратор"),
+    #                     "amocrm_user_id": user_id,
+    #                     "email": user.get("email"),
+    #                     "monthly_limit": None,  # Используется лимит клиники
+    #                     "current_month_usage": 0,
+    #                     "created_at": now,
+    #                     "updated_at": now
+    #                 }
+                    
+    #                 result = await self.db.administrators.insert_one(admin_doc)
+    #                 admin_ids.append(str(result.inserted_id))
+    #                 logger.info(f"Создан новый администратор: {user.get('name')} (ID: {str(result.inserted_id)})")
+    #         except Exception as e:
+    #             logger.error(f"Ошибка при создании/обновлении администратора: {e}")
+    #             continue
+                
+    #     return admin_ids
+
     async def create_administrators(self, amocrm_users, clinic_id):
         """
         Создает администраторов на основе пользователей AmoCRM.
@@ -191,7 +376,7 @@ class ClinicService:
                 # Проверяем, существует ли уже такой администратор
                 existing_admin = await self.db.administrators.find_one({
                     "amocrm_user_id": user_id,
-                    "clinic_id": ObjectId(clinic_id)
+                    "clinic_id": clinic_id
                 })
                 
                 now = datetime.now().isoformat()
@@ -206,12 +391,16 @@ class ClinicService:
                             "updated_at": now
                         }}
                     )
-                    admin_ids.append(str(existing_admin["_id"]))
-                    logger.info(f"Обновлен администратор: {user.get('name')} (ID: {str(existing_admin['_id'])})")
+                    admin_id = str(existing_admin["_id"]) if not isinstance(existing_admin["_id"], str) else existing_admin["_id"]
+                    admin_ids.append(admin_id)
+                    logger.info(f"Обновлен администратор: {user.get('name')} (ID: {admin_id})")
                 else:
-                    # Создаем нового администратора
+                    # Создаем нового администратора с уникальным ID
+                    import uuid
+                    
                     admin_doc = {
-                        "clinic_id": ObjectId(clinic_id),
+                        "_id": str(uuid.uuid4()),  # Используем UUID как строковый _id
+                        "clinic_id": clinic_id,
                         "name": user.get("name", "Неизвестный администратор"),
                         "amocrm_user_id": user_id,
                         "email": user.get("email"),
@@ -221,31 +410,102 @@ class ClinicService:
                         "updated_at": now
                     }
                     
-                    result = await self.db.administrators.insert_one(admin_doc)
-                    admin_ids.append(str(result.inserted_id))
-                    logger.info(f"Создан новый администратор: {user.get('name')} (ID: {str(result.inserted_id)})")
+                    await self.db.administrators.insert_one(admin_doc)
+                    admin_ids.append(admin_doc["_id"])
+                    logger.info(f"Создан новый администратор: {user.get('name')} (ID: {admin_doc['_id']})")
             except Exception as e:
                 logger.error(f"Ошибка при создании/обновлении администратора: {e}")
                 continue
                 
         return admin_ids
+    
+    # async def get_clinic_by_id(self, clinic_id: str) -> Optional[Dict[str, Any]]:
+    #     """
+    #     Получает информацию о клинике по ID
+    #     """
+    #     try:
+    #         clinic = await self.db.clinics.find_one({"_id": ObjectId(clinic_id)})
+            
+    #         if not clinic:
+    #             return None
+                
+    #         # Получаем администраторов клиники
+    #         administrators = []
+    #         admin_cursor = self.db.administrators.find({"clinic_id": ObjectId(clinic_id)})
+            
+    #         async for admin in admin_cursor:
+    #             administrators.append({
+    #                 "id": str(admin["_id"]),
+    #                 "name": admin["name"],
+    #                 "email": admin.get("email"),
+    #                 "amocrm_user_id": admin["amocrm_user_id"],
+    #                 "monthly_limit": admin.get("monthly_limit"),
+    #                 "current_month_usage": admin.get("current_month_usage", 0)
+    #             })
+                
+    #         # Форматируем данные клиники
+    #         clinic_data = {
+    #             "id": str(clinic["_id"]),
+    #             "name": clinic["name"],
+    #             "amocrm_subdomain": clinic["amocrm_subdomain"],
+    #             "amocrm_pipeline_id": clinic.get("amocrm_pipeline_id"),
+    #             "monthly_limit": clinic.get("monthly_limit", 100),
+    #             "current_month_usage": clinic.get("current_month_usage", 0),
+    #             "last_reset_date": clinic.get("last_reset_date"),
+    #             "administrators": administrators
+    #         }
+            
+    #         return clinic_data
+            
+    #     except Exception as e:
+    #         logger.error(f"Ошибка при получении информации о клинике: {e}")
+    #         return None
+
     async def get_clinic_by_id(self, clinic_id: str) -> Optional[Dict[str, Any]]:
         """
         Получает информацию о клинике по ID
         """
         try:
-            clinic = await self.db.clinics.find_one({"_id": ObjectId(clinic_id)})
+            # Пробуем несколько вариантов поиска
+            clinic = None
             
+            # 1. Пытаемся найти по _id как ObjectId (если это 24-символьная hex строка)
+            if len(clinic_id) == 24 and all(c in '0123456789abcdefABCDEF' for c in clinic_id):
+                try:
+                    clinic = await self.db.clinics.find_one({"_id": ObjectId(clinic_id)})
+                except:
+                    pass
+            
+            # 2. Если не нашли, пробуем искать по строковому _id
+            if not clinic:
+                clinic = await self.db.clinics.find_one({"_id": clinic_id})
+            
+            # 3. Пробуем по полю id
+            if not clinic:
+                clinic = await self.db.clinics.find_one({"id": clinic_id})
+            
+            # 4. Пробуем по полю client_id, если предыдущие варианты не сработали
+            if not clinic:
+                clinic = await self.db.clinics.find_one({"client_id": clinic_id})
+                
             if not clinic:
                 return None
                 
             # Получаем администраторов клиники
             administrators = []
-            admin_cursor = self.db.administrators.find({"clinic_id": ObjectId(clinic_id)})
+            
+            # Определяем правильный тип clinic_id для запроса администраторов
+            clinic_id_for_query = clinic["_id"]
+            if isinstance(clinic_id_for_query, str):
+                clinic_id_obj = clinic_id_for_query
+            else:
+                clinic_id_obj = clinic_id_for_query
+                
+            admin_cursor = self.db.administrators.find({"clinic_id": clinic_id_obj})
             
             async for admin in admin_cursor:
                 administrators.append({
-                    "id": str(admin["_id"]),
+                    "id": str(admin["_id"]) if not isinstance(admin["_id"], str) else admin["_id"],
                     "name": admin["name"],
                     "email": admin.get("email"),
                     "amocrm_user_id": admin["amocrm_user_id"],
@@ -255,9 +515,12 @@ class ClinicService:
                 
             # Форматируем данные клиники
             clinic_data = {
-                "id": str(clinic["_id"]),
+                "id": str(clinic["_id"]) if not isinstance(clinic["_id"], str) else clinic["_id"],
                 "name": clinic["name"],
+                "client_id": clinic["client_id"],
+                "client_secret": clinic["client_secret"],
                 "amocrm_subdomain": clinic["amocrm_subdomain"],
+                "redirect_url": clinic["redirect_url"],
                 "amocrm_pipeline_id": clinic.get("amocrm_pipeline_id"),
                 "monthly_limit": clinic.get("monthly_limit", 100),
                 "current_month_usage": clinic.get("current_month_usage", 0),

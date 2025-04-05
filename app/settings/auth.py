@@ -18,7 +18,7 @@ def evenlabs():
 #     return OpenAI(api_key=os.getenv("OPENAI"))
 
 def get_langchain_token():
-    return ChatOpenAI(model_name="gpt-4o-mini", temperature=0.3, openai_api_key=os.getenv("OPENAI"))
+    return ChatOpenAI(model_name="gpt-4o-mini", temperature=0.4, openai_api_key=os.getenv("OPENAI"))
 
 def get_mongodb():
     return AsyncIOMotorClient(os.getenv("MONGO_URI"))
